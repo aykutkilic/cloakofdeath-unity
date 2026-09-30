@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Cloak of Death">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="description" content="Cloak of Death: David Cockram's Atari adventure as a first-person game.">
+    <title>Cloak of Death</title>
+    <style>
+      @font-face { font-family: "Atari"; src: url("Atari-Regular.ttf"); }
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none;
+        touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+      #unity-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; background: #000; outline: none; touch-action: none;
+        image-rendering: pixelated; /* the pixel look stays crisp when the page scales the canvas */ }
+      /* Held upright: a passing tip, not a wall - it can be played that way (an iPhone with its
+         rotation locked cannot turn), just with a narrower view. */
+      #rotate { position: fixed; left: 0; right: 0; top: 0; display: none; flex-direction: row; align-items: center;
+        justify-content: center; gap: 12px; padding: 10px 16px; background: rgba(0, 0, 0, 0.8); color: #ffc860;
+        font-family: "Atari", ui-monospace, monospace; font-size: 12px; line-height: 1.5; text-align: left; z-index: 10;
+        pointer-events: none; }
+      #rotate .phone { flex: none; width: 14px; height: 24px; border: 2px solid #ffc860; border-radius: 3px; animation: turn 2.4s ease-in-out infinite; }
+      @keyframes turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+      @media (orientation: portrait) { body.touch.tip #rotate { display: flex; } }
+      #loading {
+        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px; padding: 16px; color: #e6e6e0; font-family: "Atari", ui-monospace, monospace; text-align: center;
+        background: radial-gradient(circle at 50% 45%, #1a0706 0%, #000 60%);
+      }
+      #loading h1 { margin: 0; color: #d91a14; font-size: clamp(26px, 6vw, 56px); font-weight: normal; letter-spacing: 2px; }
+      #loading .by { font-size: 14px; color: #bfbab0; }
+      #bar { width: min(360px, 80vw); height: 10px; border: 2px solid #ffc860; margin-top: 12px; }
+      #fill { width: 0; height: 100%; background: #ffc860; transition: width 0.2s; }
+      #status { font-size: 12px; color: #ffc860; min-height: 1.2em; }
+      .hint { font-size: 11px; line-height: 1.6; color: #8a8680; max-width: 560px; }
+      #play { display: none; margin-top: 10px; padding: 14px 34px; border: 2px solid #ffc860; color: #ffc860; background: #1a0706;
+        font-family: "Atari", ui-monospace, monospace; font-size: 18px; letter-spacing: 1px; }
+      #error { display: none; color: #ff8060; font-size: 13px; max-width: 560px; line-height: 1.6; }
+      /* Back to full screen: a small button at the top in the middle, clear of the stick, the
+         buttons, the menu button and the messages; shown only when out of full screen. */
+      #fs { position: fixed; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5;
+        width: 42px; height: 42px; display: none; align-items: center; justify-content: center; padding: 0;
+        border: 2px solid rgba(255, 200, 96, 0.75); border-radius: 50%; background: rgba(0, 0, 0, 0.5);
+        opacity: 0.95; transition: opacity 1.2s; touch-action: manipulation; }
+      #fs.dim { opacity: 0.35; }
+      body.windowed #fs { display: flex; }
+      /* A small phone held sideways (an iPhone SE with Safari's bars is 320 points tall). */
+      @media (max-height: 460px) {
+        #loading { gap: 6px; padding: 8px 16px; justify-content: center; overflow-y: auto; }
+        #loading h1 { font-size: clamp(20px, 7vh, 34px); }
+        #loading .by { font-size: 11px; }
+        .hint { font-size: 10px; line-height: 1.45; }
+        #bar { margin-top: 4px; }
+        #play { margin-top: 4px; padding: 10px 28px; font-size: 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="unity-canvas" tabindex="-1"></canvas>
+    <button id="fs" aria-label="Full screen"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"
+      fill="none" stroke="#ffc860" stroke-width="2.4"/></svg></button>
+    <div id="rotate"><div class="phone"></div><div>Best played sideways: turn your device<br>(or play on as it is)</div></div>
+    <div id="loading">
+      <h1>CLOAK OF DEATH</h1>
+      <div class="by">by David Cockram</div>
+      <div id="bar"><div id="fill"></div></div>
+      <div id="status">Loading...</div>
+      <div class="hint desk">Click the game to capture the mouse &middot; ESC frees it and opens the menu<br>
+        WASD move &middot; mouse look &middot; E use &middot; left button use item &middot; Q put down &middot; F candle &middot; F1 help</div>
+      <div class="hint touchhint" style="display:none">Best held sideways &middot; the game goes full screen as it starts<br>
+        Left thumb moves &middot; drag to look &middot; tap to use &middot; buttons on the right<br>
+        Add it to your home screen to play it as an app</div>
+      <div class="hint iphonehint" style="display:none">On an iPhone the browser keeps its bars: for the whole screen, tap Share
+        and Add to Home Screen, then play it from there</div>
+      <div class="hint ipadhint" style="display:none">On an iPad a pinch leaves full screen (two thumbs moving together can look
+        like one): the button at the top brings it back. Added to the Home Screen (Share, Add to Home Screen) it plays
+        full screen with nothing to knock it out</div>
+      <div id="error"></div>
+      <button id="play">TAP TO PLAY</button>
+    </div>
+    <script src="Build/WebGL.loader.js"></script>
+    <script>
+      const canvas = document.querySelector("#unity-canvas");
+      const fill = document.querySelector("#fill");
+      const status = document.querySelector("#status");
+      const touch = matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+      if (touch) {
+        document.body.classList.add("touch");
+        document.querySelector(".desk").style.display = "none";
+        document.querySelector(".touchhint").style.display = "";
+        const standaloneApp = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || navigator.standalone;
+        const ipad = /iPad/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+        if (/iPhone|iPod/.test(navigator.userAgent) && !standaloneApp) document.querySelector(".iphonehint").style.display = "";
+        if (ipad && !standaloneApp) document.querySelector(".ipadhint").style.display = "";
+        // Upright: the tip for a few seconds when the game starts or the device is turned upright.
+        let tipTimer = 0;
+        const tip = () => {
+          if (!matchMedia("(orientation: portrait)").matches) return;
+          document.body.classList.add("tip");
+          clearTimeout(tipTimer);
+          tipTimer = setTimeout(() => document.body.classList.remove("tip"), 6000);
+        };
+        window.showTip = tip;
+        matchMedia("(orientation: portrait)").addEventListener("change", (e) => { if (e.matches) tip(); });
+        // Full screen and turned sideways when the game starts (TAP TO PLAY: browsers only allow
+        // it from a touch). Left again (a pinch on an iPad, a swipe on Android), it is never
+        // re-entered by an ordinary touch: that turned every accidental pinch while playing
+        // into full screen off, then on again at the next lifted finger. The button at the top
+        // brings it back when wanted. Installed as an app it is full screen already.
+        const standalone = matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches || navigator.standalone;
+        const root = document.documentElement;
+        const canFullscreen = !standalone && !!(root.requestFullscreen || root.webkitRequestFullscreen) &&
+          !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+        const inFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+        const immerse = () => {
+          if (!canFullscreen || inFullscreen()) return;
+          const request = root.requestFullscreen || root.webkitRequestFullscreen;
+          Promise.resolve(request.call(root, { navigationUI: "hide" }))
+            .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock("landscape"))
+            .catch(() => {});
+        };
+        window.immerse = immerse;
+        const fs = document.querySelector("#fs");
+        let playing = false, dimTimer = 0;
+        const showFs = () => {
+          const windowed = playing && canFullscreen && !inFullscreen();
+          document.body.classList.toggle("windowed", windowed);
+          fs.classList.remove("dim");
+          clearTimeout(dimTimer);
+          if (windowed) dimTimer = setTimeout(() => fs.classList.add("dim"), 4000);
+        };
+        window.startedPlaying = () => { playing = true; showFs(); };
+        document.addEventListener("fullscreenchange", showFs);
+        document.addEventListener("webkitfullscreenchange", showFs);
+        // The button's own touches are not the game's.
+        for (const type of ["touchstart", "touchend", "pointerdown", "pointerup", "mousedown", "mouseup"])
+          fs.addEventListener(type, (e) => e.stopPropagation());
+        fs.addEventListener("click", (e) => { e.stopPropagation(); immerse(); });
+        // No page scrolling, pinch zoom or long-press menus while playing; Safari's own pinch
+        // gestures are refused too, as far as a page can.
+        addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+        addEventListener("contextmenu", (e) => e.preventDefault());
+        for (const type of ["gesturestart", "gesturechange", "gestureend"])
+          addEventListener(type, (e) => e.preventDefault(), { passive: false });
+      }
+      // Phones and tablets cannot use desktop (DXT) textures: they get the ASTC copy of the data.
+      const probe = document.createElement("canvas").getContext("webgl2");
+      const astc = !!(probe && probe.getExtension("WEBGL_compressed_texture_astc"));
+      const s3tc = !!(probe && (probe.getExtension("WEBGL_compressed_texture_s3tc") || probe.getExtension("WEBKIT_WEBGL_compressed_texture_s3tc")));
+      const dataFile = "WebGL.data.unityweb";
+      // Testing on a phone or in a simulator (WebScene.cs): ?scene=20 goes straight into that
+      // room, candle lit; layers=0, soft=0, shadows=0, candleshadow=0 switch rendering features off.
+      const query = new URLSearchParams(location.search);
+      // WebKit (Safari, and every browser on iPhone and iPad) samples sRGB ASTC textures wrongly,
+      // black or far too dark, when they are given immutable storage with mips and then filled
+      // level by level (texStorage2D + compressedTexSubImage2D, which is how Unity uploads them).
+      // Each level uploaded whole with compressedTexImage2D decodes right, so for those formats
+      // the storage call only notes the size and the fills become whole-level uploads.
+      // (?astcfix=0 leaves WebKit alone, to compare.)
+      const ua = navigator.userAgent;
+      if (window.WebGL2RenderingContext && /AppleWebKit/.test(ua) && !/Chrome|Chromium|Android/.test(ua) &&
+          query.get("astcfix") !== "0") {
+        const gl2 = WebGL2RenderingContext.prototype;
+        const srgbAstc = (format) => format >= 0x93D0 && format <= 0x93DD;
+        const sizes = new WeakMap();
+        const storage = gl2.texStorage2D, fill = gl2.compressedTexSubImage2D;
+        gl2.texStorage2D = function (target, levels, format, width, height) {
+          const texture = target === this.TEXTURE_2D && srgbAstc(format) && this.getParameter(this.TEXTURE_BINDING_2D);
+          if (!texture) return storage.apply(this, arguments);
+          sizes.set(texture, { width, height });
+          this.texParameteri(target, this.TEXTURE_MAX_LEVEL, levels - 1);
+        };
+        gl2.compressedTexSubImage2D = function (target, level, x, y, width, height, format, ...data) {
+          const texture = target === this.TEXTURE_2D && srgbAstc(format) && this.getParameter(this.TEXTURE_BINDING_2D);
+          const size = texture && sizes.get(texture);
+          if (!size || x || y || width !== Math.max(1, size.width >> level) || height !== Math.max(1, size.height >> level))
+            return fill.apply(this, arguments);
+          this.compressedTexImage2D(target, level, format, width, height, 0, ...data);
+        };
+      }
+      const unityArgs = [];
+      if (query.get("scene")) unityArgs.push("-scene", query.get("scene"));
+      if (query.get("act")) unityArgs.push("-act", query.get("act"));
+      if (query.get("tonemap")) unityArgs.push("-tonemap", query.get("tonemap"));
+      if (query.get("exposure")) unityArgs.push("-exposure", query.get("exposure"));
+      for (const [key, arg] of [["layers", "-nolayers"], ["soft", "-nosoft"], ["shadows", "-noshadows"],
+                                ["candleshadow", "-nocandleshadow"], ["candle", "-nocandle"]])
+        if (query.get(key) === "0") unityArgs.push(arg);
+      if (query.get("shadows") === "1") unityArgs.push("-shadows");
+      if (query.get("normals") === "0") unityArgs.push("-nonormal");
+      if (query.get("aniso") === "0") unityArgs.push("-aniso0");
+      if (query.get("bilinear") === "1") unityArgs.push("-bilinear");
+      if (query.get("mipbias")) unityArgs.push("-mipbias", query.get("mipbias"));
+      if (query.get("albedo") === "0") unityArgs.push("-noalbedo");
+      const testScene = !!query.get("scene");
+      // ?debug=1: the page's console on screen (for phones, which have no console to open).
+      if (query.get("debug") === "1") {
+        unityArgs.push("-debug");
+        const box = document.createElement("pre");
+        box.style.cssText = "position:fixed;left:0;top:0;right:0;max-height:45vh;overflow:hidden;margin:0;padding:6px;" +
+          "font:10px/1.3 ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);z-index:30;pointer-events:none;white-space:pre-wrap";
+        document.body.appendChild(box);
+        const add = (kind, a) => {
+          const line = kind + " " + Array.from(a).map((x) => (x && x.stack) || String(x)).join(" ");
+          box.textContent = (box.textContent + "\n" + line).split("\n").slice(-30).join("\n");
+        };
+        for (const k of ["log", "warn", "error"]) {
+          const o = console[k];
+          console[k] = function () { add(k, arguments); o.apply(console, arguments); };
+        }
+        addEventListener("error", (e) => add("onerror", [e.message + " @" + e.filename + ":" + e.lineno]));
+        addEventListener("unhandledrejection", (e) => add("rejection", [e.reason]));
+      }
+      createUnityInstance(canvas, {
+        arguments: unityArgs,
+        // (?data=astc or ?data=dxt forces one copy, for testing.)
+        dataUrl: "Build/" + ((query.get("data") ? query.get("data") === "astc" : astc && !s3tc) ? dataFile.replace(".data", ".astc.data") : dataFile),
+        frameworkUrl: "Build/WebGL.framework.js.unityweb",
+        codeUrl: "Build/WebGL.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "Cloak of Death",
+        productName: "Cloak of Death",
+        productVersion: "1.0",
+        // Sharp enough, without rendering 4x the pixels on high-density screens.
+        devicePixelRatio: Math.min(window.devicePixelRatio || 1, 1.5),
+        // Saves (Application.persistentDataPath) kept in the browser's storage as they are written.
+        autoSyncPersistentDataPath: true,
+        // The browser may refuse to capture the mouse (clicked too soon after ESC, say): the
+        // next click captures it; that is no reason to stop the game with an error box.
+        errorHandler: (err) => /pointer ?lock|exited the lock|WrongDocumentError/i.test(String(err)),
+      }, (progress) => {
+        fill.style.width = Math.round(progress * 100) + "%";
+        status.textContent = progress < 0.9 ? "Loading... " + Math.round(progress * 100) + "%" : "Opening the house...";
+      }).then(() => {
+        const loading = document.querySelector("#loading");
+        if (!touch || testScene) {
+          loading.remove();
+          canvas.focus();
+          return;
+        }
+        // On a touchscreen the first tap switches to full screen and landscape, which resizes
+        // the game under the finger: let that tap land here rather than on a game button.
+        status.textContent = "";
+        document.querySelector("#bar").style.display = "none";
+        const play = document.querySelector("#play");
+        play.style.display = "block";
+        play.addEventListener("click", () => {
+          window.immerse();
+          setTimeout(() => { loading.remove(); window.showTip(); window.startedPlaying(); }, 350);
+        }, { once: true });
+      }).catch((message) => {
+        status.textContent = "";
+        const error = document.querySelector("#error");
+        error.style.display = "block";
+        error.textContent = "The game could not start in this browser: " + message +
+          " Try a current desktop Chrome, Edge, Firefox or Safari.";
+      });
+      // Keep the page's own shortcuts (reload on F5, help on F1) out of the game.
+      window.addEventListener("keydown", (e) => {
+        if (["F1", "F5", "F9"].includes(e.key)) e.preventDefault();
+      });
+    </script>
+  </body>
+</html>
